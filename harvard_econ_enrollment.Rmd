@@ -9,6 +9,7 @@ output: html_document
   
 
 ```{r setup, include=FALSE, warning = FALSE, message = FALSE, error = FALSE, echo = FALSE}
+  # Loading the necessary packages required to create required graph
   library(tidyverse)
   library(dplyr)
   library(readxl)
@@ -17,66 +18,107 @@ output: html_document
   library(fs)
   library(gtools)
 
-  
+  # Downloading two files from data source Harvard Registrar and saving them locally as excel files
   download.file(url = "https://registrar.fas.harvard.edu/files/fas-registrar/files/class_enrollment_summary_by_term_2.28.19.xlsx", destfile = "reg_2019.xsls", mode = 'wb' )
   download.file(url = "https://registrar.fas.harvard.edu/files/fas-registrar/files/class_enrollment_summary_by_term_03.06.18.xlsx", destfile = "reg_2018.xsls", mode = 'wb' )
   
+  # Reading data from Spring 2019 into R
   x_2019 <-
+    # We can skip the first 3 rows because it has redundant data
     read_excel("reg_2019.xsls", skip = 3) %>%
+    # Making column names easier to work with
     clean_names()
   
+  # Reading data from Spring 2019 into R
   x_2018 <-
-    read_excel("reg_2018.xsls", skip = 3) %>%
-    clean_names()
+      # We can skip the first 3 rows because it has redundant data
+      read_excel("reg_2018.xsls", skip = 3) %>%
+      # Making column names easier to work with
+      clean_names()
   
+  # Deleting the excel files to keep repository clean
   fs::file_delete(c("reg_2019.xsls","reg_2018.xsls"))
 ```
   
   
 
 ```{r plot, warning = FALSE, message = FALSE, error = FALSE, echo = FALSE}
+  # Taking a subset of Spring 2019 data for easier analysis
   x_2019_subset <-  x_2019 %>%
+    # Making sure we take classes that have undergraduate enrollment
     filter(!is.na(u_grad)) %>% 
+    # Selecting the columns we need
     select(course_id, course_department, u_grad)
   
+  # Taking a subset of Spring 2018 data for easier analysis
+  x_2018_subset <-  x_2018 %>%
+      # Making sure we take classes that have undergraduate enrollment
+      filter(!is.na(u_grad)) %>% 
+      # Selecting the columns we need
+      select(course_id, course_department, u_grad)
   
-  x_2018_subset <- x_2018 %>% 
-    filter(!is.na(u_grad)) %>% 
-    select(course_id, course_department, u_grad)
-  
+  # Vertically joining the two subset data frames to create a single one
   joined_subset <- inner_join(x_2019_subset, x_2018_subset, by = "course_id", suffix = c(".2019", ".2018"))
   
-     
+  # Creating a dataframe which contains the change in enrollment of courses by department   
   department_change <-
      joined_subset %>%
+     # Removing unusual cases where courses changed departments after one semester
      filter(course_department.2019 == course_department.2018) %>%
+     # Grouping by course department in Spring 2019
      group_by(course_department.2019) %>%
+     # Removing the column we don't need
      select(-course_department.2018) %>%
+     # Creating a column that calculates course enrollment change
      mutate(change = u_grad.2019 - u_grad.2018) %>%
+     # Summarizing total change in enrollment across department
      summarise(total_change = sum(change)) %>%
+     # Rearranging the data frame by total change in enrollment
      arrange(desc(total_change))
   
+  # Choosing the top 5 departments 
   top_5 <- department_change %>% head(n = 5)
+  # Choosing the bottom 5 departments 
   bottom_5 <- department_change %>% tail(n = 5)
+  # Combining the top 5 and bottom 5 dataframes
   extreme_10 <-
     full_join(top_5, bottom_5) %>%
+    # Factor reordering departments to make better graph
     mutate(course_department.2019 = fct_reorder(course_department.2019, total_change)) %>%
+    # Creating a column which gives 1 if enorllment change, 0 otherwise to help coloring graph later
     mutate(positive = ifelse(total_change > 0 , 1, 0)) 
     
   extreme_10 %>%
+    # Creating a bar graph of courses and respective enrollment change
     ggplot(aes( x = course_department.2019, y = total_change, fill = total_change)) +
+    # Using a different color scheme than the default one which reflects graph insights better
     scale_fill_gradient(low = "red", high = "green") +
+    # Hiding legend of graph
     geom_col(show.legend = FALSE) +
-    geom_text(aes(label = total_change, color = factor(positive), hjust = ifelse(total_change > 0, -0.1, 1.1)), size = 3, fontface = 'bold', show.legend = FALSE) +
+    # Adding data labels to the bars
+    geom_text(
+      aes(
+        label = total_change,
+        # Using different colors for data labels depending on whether change was positive or negative
+        color = factor(positive),
+        # Horizontal position shift of data lables depending on whether change was positive or negative
+        hjust = ifelse(total_change > 0, -0.1, 1.1)),
+      # Adjusting font size, making it bold and hiding legend
+      size = 3, fontface = 'bold', show.legend = FALSE) +
+    # Changing color scheme of data label fonts manually based on positive/negative value
     scale_colour_manual(values = c("red", "green")) + 
+    # Turning it into a horizontal bar graph which makes insights easy to compare
     coord_flip() + 
+    # Using a minimal theme to make plot background color white
     theme_minimal() +
+    # Removing all major and minor grid lines to make plot cleaner
     theme(
       panel.grid.major.y = element_blank(),
       panel.grid.minor.y = element_blank(),
       panel.grid.major.x = element_blank(),
       panel.grid.minor.x = element_blank()
       ) +
+    # Adding appropriate title, subtitle, axes labels and data source citation
     labs(x = NULL,
          y = "Undergraduate Enrollment Change",
          title = 'Harvard Course Enrollment Change by Department',
