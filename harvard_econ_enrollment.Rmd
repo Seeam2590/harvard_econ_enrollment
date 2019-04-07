@@ -1,0 +1,87 @@
+---
+title: "Trend in Harvard Undergraduate Course Enrollment"
+author: "Seeam S. Noor"
+date: "April 6, 2019"
+output: html_document
+---
+  
+## Course Enrollment Changes from Spring 2018 - Spring 2019
+  
+
+```{r setup, include=FALSE, warning = FALSE, message = FALSE, error = FALSE, echo = FALSE}
+  library(tidyverse)
+  library(dplyr)
+  library(readxl)
+  library(janitor)
+  library(gt)
+  library(fs)
+  library(gtools)
+
+  
+  download.file(url = "https://registrar.fas.harvard.edu/files/fas-registrar/files/class_enrollment_summary_by_term_2.28.19.xlsx", destfile = "reg_2019.xsls", mode = 'wb' )
+  download.file(url = "https://registrar.fas.harvard.edu/files/fas-registrar/files/class_enrollment_summary_by_term_03.06.18.xlsx", destfile = "reg_2018.xsls", mode = 'wb' )
+  
+  x_2019 <-
+    read_excel("reg_2019.xsls", skip = 3) %>%
+    clean_names()
+  
+  x_2018 <-
+    read_excel("reg_2018.xsls", skip = 3) %>%
+    clean_names()
+  
+  fs::file_delete(c("reg_2019.xsls","reg_2018.xsls"))
+```
+  
+  
+
+```{r plot, warning = FALSE, message = FALSE, error = FALSE, echo = FALSE}
+  x_2019_subset <-  x_2019 %>%
+    filter(!is.na(u_grad)) %>% 
+    select(course_id, course_department, u_grad)
+  
+  
+  x_2018_subset <- x_2018 %>% 
+    filter(!is.na(u_grad)) %>% 
+    select(course_id, course_department, u_grad)
+  
+  joined_subset <- inner_join(x_2019_subset, x_2018_subset, by = "course_id", suffix = c(".2019", ".2018"))
+  
+     
+  department_change <-
+     joined_subset %>%
+     filter(course_department.2019 == course_department.2018) %>%
+     group_by(course_department.2019) %>%
+     select(-course_department.2018) %>%
+     mutate(change = u_grad.2019 - u_grad.2018) %>%
+     summarise(total_change = sum(change)) %>%
+     arrange(desc(total_change))
+  
+  top_5 <- department_change %>% head(n = 5)
+  bottom_5 <- department_change %>% tail(n = 5)
+  extreme_10 <-
+    full_join(top_5, bottom_5) %>%
+    mutate(course_department.2019 = fct_reorder(course_department.2019, total_change)) %>%
+    mutate(positive = ifelse(total_change > 0 , 1, 0)) 
+    
+  extreme_10 %>%
+    ggplot(aes( x = course_department.2019, y = total_change, fill = total_change)) +
+    scale_fill_gradient(low = "red", high = "green") +
+    geom_col(show.legend = FALSE) +
+    geom_text(aes(label = total_change, color = factor(positive), hjust = ifelse(total_change > 0, -0.1, 1.1)), size = 3, fontface = 'bold', show.legend = FALSE) +
+    scale_colour_manual(values = c("red", "green")) + 
+    coord_flip() + 
+    theme_minimal() +
+    theme(
+      panel.grid.major.y = element_blank(),
+      panel.grid.minor.y = element_blank(),
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor.x = element_blank()
+      ) +
+    labs(x = NULL,
+         y = "Undergraduate Enrollment Change",
+         title = 'Harvard Course Enrollment Change by Department',
+         subtitle = 'Top 5 vs Bottom 5: Economics saw the highest enrollment drop',
+         caption = "Source: Harvard Registrar \n Spring 2018 - Spring 2019")
+
+```
+  
